@@ -15,7 +15,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// struct es una estructura de datos para almacenar valores de diferentes tipos y modelarlos
+// User es una estructura de datos para almacenar valores de diferentes tipos y modelarlos
 type User struct {
 	ID       int    `json:"id"`
 	Username string `json:"username"`
@@ -42,6 +42,7 @@ func main() {
 	r := chi.NewRouter()
 	r.Post("/register", Register)
 	r.Post("/login", Login)
+	r.Get("/test", TestToken)
 
 	port := ":8080"
 	log.Printf("Server started on port %s\n", port)
@@ -58,6 +59,18 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verificar si el usuario ya existe en la base de datos
+	var existingUser string
+	err = db.QueryRow("SELECT username FROM users WHERE username = ?", user.Username).Scan(&existingUser)
+	if err == nil {
+		http.Error(w, "El nombre de usuario ya está en uso", http.StatusConflict)
+		return
+	} else if err != sql.ErrNoRows {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Si no hay errores y el usuario no existe, procedemos con el registro
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -71,6 +84,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("Usuario registrado exitosamente"))
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
@@ -84,17 +98,19 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	var storedPassword string
 	err = db.QueryRow("SELECT password FROM users WHERE username = ?", user.Username).Scan(&storedPassword)
 	if err != nil {
-		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+		http.Error(w, "Usuario o contraseña inválidos", http.StatusUnauthorized)
 		return
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(user.Password))
 	if err != nil {
-		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+		http.Error(w, "Usuario o contraseña inválidos", http.StatusUnauthorized)
 		return
 	}
 
-	expirationTime := time.Now().Add(15 * time.Minute)
+	// Establecer la fecha de expiración del token en 7 días
+	expirationTime := time.Now().Add(7 * 24 * time.Hour)
+
 	claims := &Claims{
 		Username: user.Username,
 		StandardClaims: jwt.StandardClaims{
@@ -109,6 +125,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Guardar token en cookies para no perder la sesión
 	http.SetCookie(w, &http.Cookie{
 		Name:    "token",
 		Value:   tokenString,
@@ -116,6 +133,41 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Inicio de sesión exitoso"))
+}
+
+func TestToken(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("token")
+	if err != nil {
+		http.Error(w, "Token no encontrado", http.StatusUnauthorized)
+		return
+	}
+
+	// Leer la cookie
+	tokenString := cookie.Value
+	claims := &Claims{}
+
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+	if err != nil {
+		http.Error(w, "Token inválido", http.StatusUnauthorized)
+		return
+	}
+
+	if !token.Valid {
+		http.Error(w, "Token inválido", http.StatusUnauthorized)
+		return
+	}
+
+	// Verificar si el token ha expirado
+	if time.Unix(claims.ExpiresAt, 0).Before(time.Now()) {
+		http.Error(w, "Token expirado, por favor inicia sesión nuevamente", http.StatusUnauthorized)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Token válido"))
 }
 
 // Estructura para JWT
