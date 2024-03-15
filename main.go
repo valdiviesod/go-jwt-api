@@ -15,11 +15,24 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// User es una estructura de datos para almacenar valores de diferentes tipos y modelarlos
+// User representa la estructura de datos para los usuarios
 type User struct {
 	ID       int    `json:"id"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+// Article representa la estructura de datos para los artículos
+type Article struct {
+	ID          int    `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// FavoriteArticle representa la estructura de datos para los artículos favoritos de los usuarios
+type FavoriteArticle struct {
+	UserID    int `json:"user_id"`
+	ArticleID int `json:"article_id"`
 }
 
 var db *sql.DB
@@ -28,7 +41,7 @@ var jwtKey []byte
 func main() {
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Fatal("Error cargando el archivo .env")
 	}
 
 	db, err = sql.Open("mysql", os.Getenv("DB_CONNECTION_STRING"))
@@ -42,15 +55,18 @@ func main() {
 	r := chi.NewRouter()
 	r.Post("/register", Register)
 	r.Post("/login", Login)
-	r.Get("/test", TestToken)
+	r.Get("/articles", GetArticles)
+	r.Get("/favorite_articles", GetFavoriteArticles)
+	r.Post("/favorite_articles", AddFavoriteArticle)
+	r.Delete("/favorite_articles/{articleID}", RemoveFavoriteArticle)
 
 	port := ":8080"
-	log.Printf("Server started on port %s\n", port)
+	log.Printf("Servidor iniciado en el puerto %s\n", port)
 	log.Fatal(http.ListenAndServe(port, r))
-
 }
 
 // Funciones HTTP y sus controladores
+
 func Register(w http.ResponseWriter, r *http.Request) {
 	var user User
 	err := json.NewDecoder(r.Body).Decode(&user)
@@ -136,42 +152,165 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Inicio de sesión exitoso"))
 }
 
-func TestToken(w http.ResponseWriter, r *http.Request) {
+func GetArticles(w http.ResponseWriter, r *http.Request) {
+	// Consultar la base de datos para obtener la lista de artículos
+	rows, err := db.Query("SELECT id, title, description FROM articles")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var articles []Article
+	for rows.Next() {
+		var article Article
+		err := rows.Scan(&article.ID, &article.Title, &article.Description)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		articles = append(articles, article)
+	}
+
+	jsonData, err := json.Marshal(articles)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(jsonData)
+}
+
+func GetFavoriteArticles(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("token")
 	if err != nil {
 		http.Error(w, "Token no encontrado", http.StatusUnauthorized)
 		return
 	}
 
-	// Leer la cookie
 	tokenString := cookie.Value
 	claims := &Claims{}
 
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
 	})
+	if err != nil || !token.Valid {
+		http.Error(w, "Token inválido", http.StatusUnauthorized)
+		return
+	}
+
+	rows, err := db.Query("SELECT article_id FROM favorite_articles WHERE user_id = ?", claims.UserID)
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var favoriteArticleIDs []int
+	for rows.Next() {
+		var articleID int
+		err := rows.Scan(&articleID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		favoriteArticleIDs = append(favoriteArticleIDs, articleID)
+	}
+
+	var favoriteArticles []Article
+	for _, articleID := range favoriteArticleIDs {
+		var article Article
+		err := db.QueryRow("SELECT id, title, description FROM articles WHERE id = ?", articleID).Scan(&article.ID, &article.Title, &article.Description)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		favoriteArticles = append(favoriteArticles, article)
+	}
+
+	jsonData, err := json.Marshal(favoriteArticles)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(jsonData)
+}
+
+func AddFavoriteArticle(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("token")
+	if err != nil {
+		http.Error(w, "Token no encontrado", http.StatusUnauthorized)
+		return
+	}
+
+	var favArticle FavoriteArticle
+	err = json.NewDecoder(r.Body).Decode(&favArticle)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tokenString := cookie.Value
+	claims := &Claims{}
+
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+	if err != nil || !token.Valid {
 		http.Error(w, "Token inválido", http.StatusUnauthorized)
 		return
 	}
 
-	if !token.Valid {
+	_, err = db.Exec("INSERT INTO favorite_articles (user_id, article_id) VALUES (?, ?)", claims.UserID, favArticle.ArticleID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("Artículo agregado a favoritos"))
+}
+
+func RemoveFavoriteArticle(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("token")
+	if err != nil {
+		http.Error(w, "Token no encontrado", http.StatusUnauthorized)
+		return
+	}
+
+	articleID := chi.URLParam(r, "articleID")
+	if articleID == "" {
+		http.Error(w, "ID de artículo no proporcionado", http.StatusBadRequest)
+		return
+	}
+
+	tokenString := cookie.Value
+	claims := &Claims{}
+
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+	if err != nil || !token.Valid {
 		http.Error(w, "Token inválido", http.StatusUnauthorized)
 		return
 	}
 
-	// Verificar si el token ha expirado
-	if time.Unix(claims.ExpiresAt, 0).Before(time.Now()) {
-		http.Error(w, "Token expirado, por favor inicia sesión nuevamente", http.StatusUnauthorized)
+	_, err = db.Exec("DELETE FROM favorite_articles WHERE user_id = ? AND article_id = ?", claims.UserID, articleID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Token válido"))
+	w.Write([]byte("Artículo eliminado de favoritos"))
 }
 
 // Estructura para JWT
 type Claims struct {
+	UserID   int    `json:"user_id"`
 	Username string `json:"username"`
 	jwt.StandardClaims
 }
