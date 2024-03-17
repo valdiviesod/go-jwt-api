@@ -57,8 +57,8 @@ func main() {
 	r.Post("/login", Login)
 	r.Post("/logout", Logout)
 	r.Get("/articles", GetArticles)
-	r.Get("/favorite_articles", GetFavoriteArticles)
-	r.Post("/favorite_articles", AddFavoriteArticle)
+	r.Get("/fav_articles", GetFavoriteArticles)
+	r.Post("/add_fav", AddFavoriteArticle)
 	r.Delete("/favorite_articles/{articleID}", RemoveFavoriteArticle)
 
 	port := ":8080"
@@ -195,14 +195,21 @@ func GetFavoriteArticles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query("SELECT article_id FROM favorite_articles WHERE user_id = ?", claims.UserID)
+	var userID int
+	err = db.QueryRow("SELECT id FROM users WHERE username = ?", claims.Username).Scan(&userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var favoriteArticleIDs []int
+	rows, err := db.Query("SELECT article_id FROM favorite_articles WHERE user_id = ?", userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
 
-	var favoriteArticleIDs []int
 	for rows.Next() {
 		var articleID int
 		err := rows.Scan(&articleID)
@@ -213,6 +220,14 @@ func GetFavoriteArticles(w http.ResponseWriter, r *http.Request) {
 		favoriteArticleIDs = append(favoriteArticleIDs, articleID)
 	}
 
+	// Check if there are any favorite articles before proceeding
+	if len(favoriteArticleIDs) == 0 {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode([]Article{}) // Return an empty slice
+		return
+	}
+
+	// Obtener los detalles de los artículos favoritos
 	var favoriteArticles []Article
 	for _, articleID := range favoriteArticleIDs {
 		var article Article
@@ -224,6 +239,7 @@ func GetFavoriteArticles(w http.ResponseWriter, r *http.Request) {
 		favoriteArticles = append(favoriteArticles, article)
 	}
 
+	// Devolver los artículos favoritos como respuesta
 	jsonData, err := json.Marshal(favoriteArticles)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -241,13 +257,6 @@ func AddFavoriteArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var favArticle FavoriteArticle
-	err := json.NewDecoder(r.Body).Decode(&favArticle)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
 	// Verificar y decodificar el token
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
@@ -258,7 +267,22 @@ func AddFavoriteArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = db.Exec("INSERT INTO favorite_articles (user_id, article_id) VALUES (?, ?)", claims.UserID, favArticle.ArticleID)
+	// Consultar la base de datos para obtener el ID del usuario
+	var userID int
+	err = db.QueryRow("SELECT id FROM users WHERE username = ?", claims.Username).Scan(&userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var favArticle FavoriteArticle
+	err = json.NewDecoder(r.Body).Decode(&favArticle)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	_, err = db.Exec("INSERT INTO favorite_articles (user_id, article_id) VALUES (?, ?)", userID, favArticle.ArticleID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
