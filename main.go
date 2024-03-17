@@ -55,6 +55,7 @@ func main() {
 	r := chi.NewRouter()
 	r.Post("/register", Register)
 	r.Post("/login", Login)
+	r.Post("/logout", Logout)
 	r.Get("/articles", GetArticles)
 	r.Get("/favorite_articles", GetFavoriteArticles)
 	r.Post("/favorite_articles", AddFavoriteArticle)
@@ -298,6 +299,27 @@ func RemoveFavoriteArticle(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Artículo eliminado de favoritos"))
+}
+
+func Logout(w http.ResponseWriter, r *http.Request) {
+	// El token se invalidará estableciendo una fecha de expiración en el pasado
+	expirationTime := time.Now().Add(-1 * time.Minute) // Establecer una fecha en el pasado
+	claims := &Claims{
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: expirationTime.Unix(),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString(jwtKey)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Escribir el nuevo token inválido en la respuesta para invalidar el token actual en el cliente
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"token": tokenString})
 }
 
 // Estructura para JWT
