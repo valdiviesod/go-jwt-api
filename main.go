@@ -128,6 +128,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	expirationTime := time.Now().Add(7 * 24 * time.Hour)
 
 	claims := &Claims{
+		UserID:   user.ID, // Suponiendo que tengas un campo ID en tu estructura User
 		Username: user.Username,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: expirationTime.Unix(),
@@ -141,15 +142,9 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Guardar token en cookies para no perder la sesión
-	http.SetCookie(w, &http.Cookie{
-		Name:    "token",
-		Value:   tokenString,
-		Expires: expirationTime,
-	})
-
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Inicio de sesión exitoso"))
+	// Escribir el token en la respuesta
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"token": tokenString})
 }
 
 func GetArticles(w http.ResponseWriter, r *http.Request) {
@@ -183,15 +178,14 @@ func GetArticles(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetFavoriteArticles(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("token")
-	if err != nil {
-		http.Error(w, "Token no encontrado", http.StatusUnauthorized)
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, "Token no proporcionado", http.StatusUnauthorized)
 		return
 	}
 
-	tokenString := cookie.Value
+	// Verificar y decodificar el token
 	claims := &Claims{}
-
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
 	})
@@ -240,22 +234,21 @@ func GetFavoriteArticles(w http.ResponseWriter, r *http.Request) {
 }
 
 func AddFavoriteArticle(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("token")
-	if err != nil {
-		http.Error(w, "Token no encontrado", http.StatusUnauthorized)
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, "Token no proporcionado", http.StatusUnauthorized)
 		return
 	}
 
 	var favArticle FavoriteArticle
-	err = json.NewDecoder(r.Body).Decode(&favArticle)
+	err := json.NewDecoder(r.Body).Decode(&favArticle)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	tokenString := cookie.Value
+	// Verificar y decodificar el token
 	claims := &Claims{}
-
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
 	})
@@ -275,9 +268,9 @@ func AddFavoriteArticle(w http.ResponseWriter, r *http.Request) {
 }
 
 func RemoveFavoriteArticle(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("token")
-	if err != nil {
-		http.Error(w, "Token no encontrado", http.StatusUnauthorized)
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, "Token no proporcionado", http.StatusUnauthorized)
 		return
 	}
 
@@ -287,9 +280,8 @@ func RemoveFavoriteArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokenString := cookie.Value
+	// Verificar y decodificar el token
 	claims := &Claims{}
-
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
 	})
