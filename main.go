@@ -153,7 +153,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 func GetArticles(w http.ResponseWriter, r *http.Request) {
 	// Consultar la base de datos para obtener la lista de artículos
-	rows, err := db.Query("SELECT id, title, description, image_url FROM articles")
+	rows, err := db.Query("SELECT id, title, vendedor, calificacion, image_url FROM articles")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -163,7 +163,7 @@ func GetArticles(w http.ResponseWriter, r *http.Request) {
 	var articles []Article
 	for rows.Next() {
 		var article Article
-		err := rows.Scan(&article.ID, &article.Title, &article.Description, &article.ImageURL)
+		err := rows.Scan(&article.ID, &article.Title, &article.Vendedor, &article.Calificacion, &article.ImageURL)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -234,7 +234,7 @@ func GetFavoriteArticles(w http.ResponseWriter, r *http.Request) {
 	var favoriteArticles []Article
 	for _, articleID := range favoriteArticleIDs {
 		var article Article
-		err := db.QueryRow("SELECT id, title, description FROM articles WHERE id = ?", articleID).Scan(&article.ID, &article.Title, &article.Description)
+		err := db.QueryRow("SELECT id, title, vendedor, calificacion , image_url FROM articles WHERE id = ?", articleID).Scan(&article.ID, &article.Title, &article.Description)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -357,13 +357,13 @@ func AddArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verifica si el campo ImageURL está presente en la solicitud
+	// Verificar si el campo ImageURL está presente en la solicitud
 	if article.ImageURL == "" {
 		http.Error(w, "El campo image_url es obligatorio", http.StatusBadRequest)
 		return
 	}
 
-	_, err = db.Exec("INSERT INTO articles (title, description, image_url) VALUES (?, ?, ?)", article.Title, article.Description, article.ImageURL)
+	_, err = db.Exec("INSERT INTO articles (title, vendedor, calificacion, image_url) VALUES (?, ?, ?, ?)", article.Title, article.Vendedor, article.Calificacion, article.ImageURL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
