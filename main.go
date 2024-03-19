@@ -27,6 +27,7 @@ type Article struct {
 	ID          int    `json:"id"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
+	ImageURL    string `json:"image_url"`
 }
 
 // FavoriteArticle representa la estructura de datos para los artículos favoritos de los usuarios
@@ -59,7 +60,9 @@ func main() {
 	r.Get("/articles", GetArticles)
 	r.Get("/fav_articles", GetFavoriteArticles)
 	r.Post("/add_fav", AddFavoriteArticle)
+	r.Post("/add_article", AddArticle)
 	r.Delete("/favorite_articles/{articleID}", RemoveFavoriteArticle)
+	r.Delete("/articles/{articleID}", RemoveArticle)
 
 	port := ":8080"
 	log.Printf("Servidor iniciado en el puerto %s\n", port)
@@ -150,7 +153,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 func GetArticles(w http.ResponseWriter, r *http.Request) {
 	// Consultar la base de datos para obtener la lista de artículos
-	rows, err := db.Query("SELECT id, title, description FROM articles")
+	rows, err := db.Query("SELECT id, title, description, image_url FROM articles")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -160,7 +163,7 @@ func GetArticles(w http.ResponseWriter, r *http.Request) {
 	var articles []Article
 	for rows.Next() {
 		var article Article
-		err := rows.Scan(&article.ID, &article.Title, &article.Description)
+		err := rows.Scan(&article.ID, &article.Title, &article.Description, &article.ImageURL)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -344,6 +347,50 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 	// Escribir el nuevo token inválido en la respuesta para invalidar el token actual en el cliente
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"token": tokenString})
+}
+
+func AddArticle(w http.ResponseWriter, r *http.Request) {
+	var article Article
+	err := json.NewDecoder(r.Body).Decode(&article)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Verifica si el campo ImageURL está presente en la solicitud
+	if article.ImageURL == "" {
+		http.Error(w, "El campo image_url es obligatorio", http.StatusBadRequest)
+		return
+	}
+
+	_, err = db.Exec("INSERT INTO articles (title, description, image_url) VALUES (?, ?, ?)", article.Title, article.Description, article.ImageURL)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("Artículo agregado exitosamente"))
+}
+
+func RemoveArticle(w http.ResponseWriter, r *http.Request) {
+	// Obtener el ID del artículo de los parámetros de la URL
+	articleID := chi.URLParam(r, "articleID")
+	if articleID == "" {
+		http.Error(w, "ID de artículo no proporcionado", http.StatusBadRequest)
+		return
+	}
+
+	// Ejecutar la consulta para eliminar el artículo
+	_, err := db.Exec("DELETE FROM articles WHERE id = ?", articleID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Si se eliminó correctamente, devolver una respuesta exitosa
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Artículo eliminado exitosamente"))
 }
 
 // Estructura para JWT
