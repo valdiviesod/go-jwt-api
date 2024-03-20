@@ -24,10 +24,11 @@ type User struct {
 
 // Article representa la estructura de datos para los artículos
 type Article struct {
-	ID          int    `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	ImageURL    string `json:"image_url"`
+	ID           int    `json:"id"`
+	Title        string `json:"title"`
+	Vendedor     string `json:"vendedor"`
+	Calificacion int    `json:"calificacion"`
+	ImageURL     string `json:"image_url"`
 }
 
 // FavoriteArticle representa la estructura de datos para los artículos favoritos de los usuarios
@@ -234,7 +235,7 @@ func GetFavoriteArticles(w http.ResponseWriter, r *http.Request) {
 	var favoriteArticles []Article
 	for _, articleID := range favoriteArticleIDs {
 		var article Article
-		err := db.QueryRow("SELECT id, title, vendedor, calificacion , image_url FROM articles WHERE id = ?", articleID).Scan(&article.ID, &article.Title, &article.Description)
+		err := db.QueryRow("SELECT id, title, vendedor, calificacion , image_url FROM articles WHERE id = ?", articleID).Scan(&article.ID, &article.Title, &article.Vendedor, &article.Calificacion)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
