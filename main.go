@@ -60,6 +60,7 @@ func main() {
 	r.Post("/logout", Logout)
 	r.Get("/articles", GetArticles)
 	r.Get("/fav_articles", GetFavoriteArticles)
+	r.Get("/articles/{articleID}", GetArticleByID)
 	r.Post("/add_fav", AddFavoriteArticle)
 	r.Post("/add_article", AddArticle)
 	r.Delete("/favorite_articles/{articleID}", RemoveFavoriteArticle)
@@ -235,7 +236,7 @@ func GetFavoriteArticles(w http.ResponseWriter, r *http.Request) {
 	var favoriteArticles []Article
 	for _, articleID := range favoriteArticleIDs {
 		var article Article
-		err := db.QueryRow("SELECT id, title, vendedor, calificacion , image_url FROM articles WHERE id = ?", articleID).Scan(&article.ID, &article.Title, &article.Vendedor, &article.Calificacion)
+		err := db.QueryRow("SELECT id, title, vendedor, calificacion , image_url FROM articles WHERE id = ?", articleID).Scan(&article.ID, &article.Title, &article.Vendedor, &article.Calificacion, &article.ImageURL)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -392,6 +393,34 @@ func RemoveArticle(w http.ResponseWriter, r *http.Request) {
 	// Si se eliminó correctamente, devolver una respuesta exitosa
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Artículo eliminado exitosamente"))
+}
+
+func GetArticleByID(w http.ResponseWriter, r *http.Request) {
+	articleID := chi.URLParam(r, "articleID")
+	if articleID == "" {
+		http.Error(w, "ID de artículo no proporcionado", http.StatusBadRequest)
+		return
+	}
+
+	var article Article
+	err := db.QueryRow("SELECT id, title, vendedor, calificacion, image_url FROM articles WHERE id = ?", articleID).Scan(&article.ID, &article.Title, &article.Vendedor, &article.Calificacion, &article.ImageURL)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Artículo no encontrado", http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	jsonData, err := json.Marshal(article)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(jsonData)
 }
 
 // Estructura para JWT
