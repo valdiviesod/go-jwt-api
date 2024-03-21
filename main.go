@@ -15,14 +15,12 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// User representa la estructura de datos para los usuarios
 type User struct {
 	ID       int    `json:"id"`
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
-// Article representa la estructura de datos para los artículos
 type Article struct {
 	ID           int    `json:"id"`
 	Title        string `json:"title"`
@@ -31,7 +29,6 @@ type Article struct {
 	ImageURL     string `json:"image_url"`
 }
 
-// FavoriteArticle representa la estructura de datos para los artículos favoritos de los usuarios
 type FavoriteArticle struct {
 	UserID    int `json:"user_id"`
 	ArticleID int `json:"article_id"`
@@ -72,7 +69,6 @@ func main() {
 }
 
 // Funciones HTTP y sus controladores
-
 func Register(w http.ResponseWriter, r *http.Request) {
 	var user User
 	err := json.NewDecoder(r.Body).Decode(&user)
@@ -81,7 +77,6 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verificar si el usuario ya existe en la base de datos
 	var existingUser string
 	err = db.QueryRow("SELECT username FROM users WHERE username = ?", user.Username).Scan(&existingUser)
 	if err == nil {
@@ -92,7 +87,6 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Si no hay errores y el usuario no existe, procedemos con el registro
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -134,7 +128,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	expirationTime := time.Now().Add(7 * 24 * time.Hour)
 
 	claims := &Claims{
-		UserID:   user.ID, // Suponiendo que tengas un campo ID en tu estructura User
+		UserID:   user.ID,
 		Username: user.Username,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: expirationTime.Unix(),
@@ -154,7 +148,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetArticles(w http.ResponseWriter, r *http.Request) {
-	// Consultar la base de datos para obtener la lista de artículos
 	rows, err := db.Query("SELECT id, title, vendedor, calificacion, image_url FROM articles")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -225,10 +218,10 @@ func GetFavoriteArticles(w http.ResponseWriter, r *http.Request) {
 		favoriteArticleIDs = append(favoriteArticleIDs, articleID)
 	}
 
-	// Check if there are any favorite articles before proceeding
+	// Ver si ya existen favoritos
 	if len(favoriteArticleIDs) == 0 {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode([]Article{}) // Return an empty slice
+		json.NewEncoder(w).Encode([]Article{}) 
 		return
 	}
 
@@ -244,7 +237,7 @@ func GetFavoriteArticles(w http.ResponseWriter, r *http.Request) {
 		favoriteArticles = append(favoriteArticles, article)
 	}
 
-	// Devolver los artículos favoritos como respuesta
+	// Devolver los artículos favoritos 
 	jsonData, err := json.Marshal(favoriteArticles)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -272,7 +265,6 @@ func AddFavoriteArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Consultar la base de datos para obtener el ID del usuario
 	var userID int
 	err = db.QueryRow("SELECT id FROM users WHERE username = ?", claims.Username).Scan(&userID)
 	if err != nil {
@@ -310,7 +302,6 @@ func RemoveFavoriteArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verificar y decodificar el token
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
@@ -332,7 +323,7 @@ func RemoveFavoriteArticle(w http.ResponseWriter, r *http.Request) {
 
 func Logout(w http.ResponseWriter, r *http.Request) {
 	// El token se invalidará estableciendo una fecha de expiración en el pasado
-	expirationTime := time.Now().Add(-1 * time.Minute) // Establecer una fecha en el pasado
+	expirationTime := time.Now().Add(-1 * time.Minute) 
 	claims := &Claims{
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: expirationTime.Unix(),
@@ -359,7 +350,6 @@ func AddArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verificar si el campo ImageURL está presente en la solicitud
 	if article.ImageURL == "" {
 		http.Error(w, "El campo image_url es obligatorio", http.StatusBadRequest)
 		return
@@ -383,14 +373,12 @@ func RemoveArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ejecutar la consulta para eliminar el artículo
 	_, err := db.Exec("DELETE FROM articles WHERE id = ?", articleID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Si se eliminó correctamente, devolver una respuesta exitosa
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Artículo eliminado exitosamente"))
 }
@@ -423,7 +411,6 @@ func GetArticleByID(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonData)
 }
 
-// Estructura para JWT
 type Claims struct {
 	UserID   int    `json:"user_id"`
 	Username string `json:"username"`
